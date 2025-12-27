@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>B站字幕提取器</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>B站字幕提取器（本地版）</h1>
+
+    <div class="row">
+      <input id="urlInput" placeholder="先随便输入：test 或粘贴B站链接" />
+      <button id="btn">提取</button>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div class="card">
+      <img id="cover" alt="cover" />
+      <div class="meta">
+        <div id="title" class="title"></div>
+      </div>
+    </div>
+
+    <textarea id="subtitle" rows="12" placeholder="字幕会显示在这里，可复制"></textarea>
+
+    <div class="row">
+      <button id="copyBtn">一键复制</button>
+      <a id="downloadBtn" class="link" download="subtitle.txt">下载TXT</a>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
