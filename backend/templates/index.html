@@ -8,17 +8,22 @@
 </head>
 <body>
   <div class="container">
-    <h1>B站字幕提取器（本地版）</h1>
+    <h1>B站字幕提取器</h1>
 
     <div class="row">
-      <input id="urlInput" placeholder="先随便输入：test 或粘贴B站链接" />
+      <input id="urlInput" placeholder="粘贴B站链接（BV号）" />
       <button id="btn">提取</button>
+      <button id="cookieBtn" type="button">设置Cookie</button>
+    </div>
+
+    <div class="row">
+      <select id="trackSelect"></select>
     </div>
 
     <div id="status" class="status"></div>
 
     <div class="card">
-      <img id="cover" alt="cover" />
+      <img id="cover" alt="cover" referrerpolicy="no-referrer" />
       <div class="meta">
         <div id="title" class="title"></div>
       </div>
