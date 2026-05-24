@@ -1,150 +1,131 @@
-# B站字幕提取器（本地 Web 工具）｜Bili CC/AI Subtitle Extractor (Local)
+# Bili CC Extractor Tools
 
-一个本地运行的 Web 小工具：输入哔哩哔哩视频链接（含 BV 号），返回 **封面 + 标题 + 字幕文本**，支持 **多语言轨道选择**、**一键复制**、**下载 SRT**。
+一个本地运行的 Bilibili CC / AI 字幕提取工具。输入 B 站视频链接或 BV 号后，可以提取封面、标题、字幕文本，并支持多语言轨道选择、复制字幕、下载 SRT。
 
-> ⚠️ 本项目默认建议本地运行（localhost）。如需登录态字幕，可在页面里手动粘贴 Cookie（仅用于本机后端进程，重启后失效）。
+> 默认仅在本机 `localhost` 运行。Cookie 仅用于本机后端进程，不要提交到 GitHub。
 
----
+## Features
 
-## 功能 Features
+- 提取 B 站视频标题、封面、字幕
+- 支持多语言字幕轨道选择
+- 一键复制字幕
+- 下载 `.srt` 字幕文件
+- 支持本地临时 Cookie，用于需要登录态的字幕
+- 后端包含重试、缓存、字幕时长校验和双次一致性校验
 
-- ✅ 输入 B 站视频链接 / BV 号，提取：
-  - 封面（cover）
-  - 标题（title）
-  - 字幕文本（subtitle）
-- ✅ 多轨道/多语言选择（如：中文/英文/日语等，取决于该视频是否提供）
-- ✅ 一键复制字幕到剪贴板
-- ✅ 下载字幕为 `.srt`
-- ✅ 稳定性增强：
-  - 重试（retry）
-  - 一致性校验（duration/lang validation）
-  - 缓存（cache）
-  - 双次一致性确认（double-fetch consistency check）用于降低上游偶发错配
+## Requirements
 
----
+- Python 3.10 或更高版本
+- Windows / macOS / Linux
 
-## 技术栈 Tech Stack
+## Quick Start
 
-- Backend: **FastAPI + Uvicorn**
-- HTTP: **requests**
-- Frontend: **Vanilla HTML/CSS/JS**
-- Platform: Windows / macOS（本地运行）
+### Windows
 
----
+双击运行：
 
-## 项目结构 Project Structure
-（以实际目录为准）
-~~~text
-bili-cc-extractor/
-  start.bat              # 一键启动（Windows）
-  backend/
-    app.py               # FastAPI 入口
-    bili.py              # B站接口封装/解析
-    requirements.txt
-    static/
-      app.js
-      style.css
-    templates/
-      index.html
-~~~
+```text
+Start Windows.bat
+```
 
----
+### macOS
 
-## 快速开始 Quick Start (Windows)
+推荐使用 Terminal 运行，避免 macOS 权限问题：
 
-### 方法 A：一键启动（推荐）
+```bash
+cd path/to/bili-cc-extractor-tools
+bash scripts/start-macos.sh
+```
 
-1. 确保已安装 Python（建议 3.12）
-2. 双击项目根目录的 `start.bat`
-3. 浏览器会自动打开：`http://127.0.0.1:8000/`
+也可以给启动器授权后双击：
 
-> 首次启动会自动创建虚拟环境并安装依赖（如果脚本检测到缺失）。
+```bash
+chmod +x "Start macOS.command"
+./"Start macOS.command"
+```
 
-### 方法 B：手动启动
+如果双击时 macOS 提示无法打开，可以右键点击 `Start macOS.command`，选择“打开”。
 
-在 `backend/` 目录下：
+### Linux
 
-~~~bash
-python -m venv .venv
+```bash
+cd path/to/bili-cc-extractor-tools
+bash scripts/start-linux.sh
+```
 
-# Windows PowerShell
-.\.venv\Scripts\activate
+启动后默认访问：
 
+```text
+http://127.0.0.1:8000/
+```
+
+## Project Structure
+
+```text
+bili-cc-extractor-tools/
+├── backend/
+│   ├── app.py
+│   ├── bili.py
+│   ├── requirements.txt
+│   ├── static/
+│   └── templates/
+├── scripts/
+│   ├── start-macos.sh
+│   ├── start-windows.bat
+│   └── start-linux.sh
+├── Start macOS.command
+├── Start Windows.bat
+├── README.md
+└── .gitignore
+```
+
+## Manual Start
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-python -m uvicorn app:app --reload
-~~~
+python -m uvicorn app:app --reload --host 127.0.0.1 --port 8000
+```
 
-打开：`http://127.0.0.1:8000/`
+Windows PowerShell:
 
----
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app:app --reload --host 127.0.0.1 --port 8000
+```
 
-## 使用说明 How to Use
+## Cookie Notice
 
-1. 打开网页，粘贴 B站视频链接（必须包含 BV 号）
-2. 点击「提取」
-3. 如有多语言轨道，可用下拉框切换轨道
-4. 点击「一键复制」或「下载 SRT」
+某些视频字幕可能需要登录态。页面里的“设置 Cookie”只会把 Cookie 发送到本机后端，并保存在当前后端进程中，重启后失效。
 
----
+不要把 Cookie 写入代码、截图或提交到 GitHub。
 
-## 登录态字幕（可选）Cookie 说明
+## API
 
-某些视频字幕需要登录态（接口会返回 `need_login_subtitle = true`）。
+- `GET /api/extract?url=BVxxxx&track=0`
+- `GET /api/extract?url=BVxxxx&track=0&debug=1`
+- `GET /api/download_srt?url=BVxxxx&track=0`
+- `POST /api/set_cookie`
+- `POST /api/clear_cookie`
 
-本项目提供 **本机 Cookie 设置**（页面按钮粘贴）：
+## GitHub Notes
 
-- Cookie 仅发送到 `localhost` 后端
-- 仅保存在当前后端进程（内存/环境变量），重启后失效
-- 不会写入文件/不会自动上传
+上传到 GitHub 前请不要提交这些文件：
 
-⚠️ **不要将 Cookie 提交到 GitHub，不要分享，不要截图。**
+- `backend/.venv/`
+- `backend/__pycache__/`
+- `.DS_Store`
+- `__MACOSX/`
+- 任何包含 Cookie、账号、私密信息的文件
 
----
+## Disclaimer
 
-## API（开发调试用）
-
-- 提取字幕  
-  `GET /api/extract?url=BVxxxx&track=0`
-
-- 调试模式（返回更多字段）  
-  `GET /api/extract?url=BVxxxx&track=0&debug=1`
-
-- 下载 SRT  
-  `GET /api/download_srt?url=BVxxxx&track=0`
-
-- 设置/清除 Cookie（仅本地）  
-  `POST /api/set_cookie`  
-  `POST /api/clear_cookie`
-
----
-
-## 可靠性设计 Reliability
-
-为降低 B站字幕上游接口的偶发错配/抖动，本项目做了以下工程化处理：
-
-- **Retry**：接口波动时自动重试
-- **Validation**：
-  - 基于视频时长的字幕一致性校验
-  - 语言一致性校验（英文/日文轨道）
-- **Double-fetch consistency**：同一 `subtitle_url` 连续抓取两次，内容不一致则视为不稳定并重试
-- **Cache**：成功结果按 `(bvid, cid, track)` 缓存，减少重复请求与风控概率
-
----
-
-## Roadmap（可选）
-
-- [ ] 更美观的 Cookie 输入弹窗（替代 prompt）
-- [ ] 支持导出 TXT / JSON / VTT
-- [ ] Docker 化（仅本地）
-- [ ] 前端显示轨道更多信息（ai_status / language）
-
----
-
-## 免责声明 Disclaimer
-
-本项目仅用于个人学习/研究与本地使用。请遵守哔哩哔哩相关服务条款与当地法律法规。
-
----
+本项目仅用于个人学习、研究与本地使用。请遵守哔哩哔哩相关服务条款与当地法律法规。
 
 ## License
 
