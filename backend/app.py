@@ -2,14 +2,16 @@ import bili
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 import time
 import hashlib
 import os
+import io
+import base64
+import requests
+import qrcode
 from fastapi import Body
-
-CACHE_TTL = 60 * 60 * 6  # 6小时
-SUB_CACHE = {}  
 
 app = FastAPI()
 
@@ -40,11 +42,7 @@ def extract(url: str, track: int = 0, debug: int = 0):
     try:
         info = bili.extract_with_tracks(url)
 
-        # 按“用户请求的轨道”缓存
-        cache_key = (info["bvid"], info["cid"], requested_track)
-        cached = SUB_CACHE.get(cache_key)
-        if cached and (time.time() - cached["ts"] < CACHE_TTL):
-            return cached["resp"]
+        # v1.2.1：不缓存字幕结果。B站字幕接口偶发波动时，缓存旧结果容易造成“串台”。
 
         expected = int(info.get("page_duration", 0))  # 本P时长（秒）
 
@@ -239,8 +237,6 @@ def extract(url: str, track: int = 0, debug: int = 0):
                 "expected_duration": expected,
             })
 
-        # 只缓存成功结果
-        SUB_CACHE[cache_key] = {"ts": time.time(), "resp": resp}
         return resp
 
     except Exception as e:
@@ -250,16 +246,222 @@ def extract(url: str, track: int = 0, debug: int = 0):
 @app.post("/api/set_cookie")
 def set_cookie(payload: dict = Body(...)):
     cookie = (payload.get("cookie") or "").strip()
+    remember = bool(payload.get("remember", True))
     if not cookie:
         raise HTTPException(status_code=400, detail="cookie 不能为空")
-    #只写入当前进程环境变量
-    os.environ["BILI_COOKIE"] = cookie
-    return {"ok": True}
+    bili.set_cookie_value(cookie, persist=remember)
+    profile = {}
+    try:
+        profile = bili.fetch_nav_profile(cookie)
+        bili.set_profile_value(profile, persist=remember)
+    except Exception:
+        profile = {}
+    return {"ok": True, "profile": profile}
 
 @app.post("/api/clear_cookie")
 def clear_cookie():
-    os.environ.pop("BILI_COOKIE", None)
+    bili.clear_cookie_value()
     return {"ok": True}
+
+
+
+
+@app.get("/api/cookie_status")
+def cookie_status():
+    cookie = bili.get_cookie_value()
+    saved_cookie = bili.get_saved_cookie_value()
+    profile = bili.get_profile_value() if cookie else {}
+    saved_profile = bili.get_profile_value() if saved_cookie else {}
+
+    # 如果有 Cookie 但没有本地昵称/头像，尝试补一次。永远不返回 Cookie 内容。
+    if cookie and not profile:
+        try:
+            profile = bili.fetch_nav_profile(cookie)
+            bili.set_profile_value(profile, persist=bool(saved_cookie))
+        except Exception:
+            profile = {}
+
+    return {
+        "has_cookie": bool(cookie),
+        "profile": profile,
+        "has_saved_cookie": bool(saved_cookie),
+        "saved_profile": saved_profile or profile,
+    }
+
+
+@app.post("/api/use_saved_cookie")
+def use_saved_cookie():
+    cookie = bili.get_saved_cookie_value()
+    if not cookie:
+        raise HTTPException(status_code=404, detail="没有保存的 Cookie，请重新扫码登录。")
+    bili.set_cookie_value(cookie, persist=True)
+    profile = bili.get_profile_value()
+    if not profile:
+        try:
+            profile = bili.fetch_nav_profile(cookie)
+            bili.set_profile_value(profile, persist=True)
+        except Exception:
+            profile = {}
+    return {"ok": True, "profile": profile}
+
+
+@app.get("/api/login/qrcode")
+def login_qrcode():
+    """
+    生成 Bilibili Web 端扫码登录二维码。
+    返回二维码图片 data URL 和 qrcode_key。
+    """
+    try:
+        api = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate"
+        r = requests.get(api, headers=bili.make_headers(), timeout=15)
+        r.raise_for_status()
+        j = r.json()
+
+        if j.get("code") != 0:
+            raise RuntimeError(f"二维码生成失败：code={j.get('code')} msg={j.get('message')}")
+
+        data = j.get("data") or {}
+        login_url = data.get("url") or ""
+        qrcode_key = data.get("qrcode_key") or ""
+
+        if not login_url or not qrcode_key:
+            raise RuntimeError("二维码接口返回异常：缺少 url 或 qrcode_key")
+
+        img = qrcode.make(login_url)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+        return {
+            "ok": True,
+            "qrcode_key": qrcode_key,
+            "url": login_url,
+            "image": f"data:image/png;base64,{img_b64}",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _cookie_header_from_response(resp: requests.Response) -> str:
+    """
+    从扫码登录成功响应中提取 Set-Cookie。
+    """
+    cookie_dict = requests.utils.dict_from_cookiejar(resp.cookies)
+    keep = {}
+    for k, v in cookie_dict.items():
+        if k in {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid"}:
+            keep[k] = v
+
+    if not keep:
+        # 兜底：部分环境下 cookies jar 为空，尝试解析 Set-Cookie 原始头
+        raw = resp.headers.get("Set-Cookie", "")
+        for part in raw.split(","):
+            first = part.strip().split(";", 1)[0]
+            if "=" not in first:
+                continue
+            k, v = first.split("=", 1)
+            k = k.strip()
+            if k in {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid"}:
+                keep[k] = v.strip()
+
+    return "; ".join(f"{k}={v}" for k, v in keep.items())
+
+
+@app.get("/api/login/qrcode/poll")
+def login_qrcode_poll(qrcode_key: str, remember: int = 1):
+    """
+    轮询 Bilibili 扫码登录状态。
+    常见状态：
+    86101 未扫码
+    86090 已扫码，等待确认
+    86038 二维码已过期
+    0 登录成功
+    """
+    try:
+        api = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll"
+        r = requests.get(
+            api,
+            params={"qrcode_key": qrcode_key},
+            headers=bili.make_headers(),
+            timeout=15,
+            allow_redirects=False,
+        )
+        r.raise_for_status()
+        j = r.json()
+
+        if j.get("code") != 0:
+            raise RuntimeError(f"登录轮询失败：code={j.get('code')} msg={j.get('message')}")
+
+        data = j.get("data") or {}
+        code = data.get("code")
+        message = data.get("message") or ""
+
+        if code == 0:
+            cookie = _cookie_header_from_response(r)
+            if not cookie:
+                # 登录成功但未拿到 Cookie，可能是接口策略变化
+                return {
+                    "ok": False,
+                    "status": "success_no_cookie",
+                    "code": code,
+                    "message": "扫码成功，但没有从响应中获取到 Cookie。请尝试手动 Cookie 模式。",
+                }
+
+            persist = bool(int(remember))
+            bili.set_cookie_value(cookie, persist=persist)
+            profile = {}
+            try:
+                profile = bili.fetch_nav_profile(cookie)
+                bili.set_profile_value(profile, persist=persist)
+            except Exception:
+                profile = {}
+            return {
+                "ok": True,
+                "status": "success",
+                "code": code,
+                "message": "登录成功。" if not persist else "登录成功，Cookie 已保存到本机。",
+                "profile": profile,
+                "remember": persist,
+            }
+
+        status_map = {
+            86101: "waiting_scan",
+            86090: "waiting_confirm",
+            86038: "expired",
+        }
+
+        return {
+            "ok": False,
+            "status": status_map.get(code, "unknown"),
+            "code": code,
+            "message": message,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/proxy_image")
+def proxy_image(url: str):
+    """
+    代理封面图，避免浏览器直接加载 B站图片时出现防盗链/空 src 破图。
+    仅用于前端展示封面，不保存图片。
+    """
+    try:
+        u = bili.to_https((url or "").strip())
+        if not u.startswith("https://"):
+            raise HTTPException(status_code=400, detail="invalid image url")
+        r = requests.get(u, headers=bili.make_headers(), timeout=15)
+        r.raise_for_status()
+        content_type = r.headers.get("content-type", "image/jpeg")
+        return Response(
+            content=r.content,
+            media_type=content_type,
+            headers={"Cache-Control": "no-store, max-age=0"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"封面加载失败：{e}")
 
 
 from fastapi.responses import PlainTextResponse

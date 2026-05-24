@@ -3,3 +3,7 @@ __pycache__/
 *.__pyc
 .env
 .DS_Store
+backend/.bili_cookie
+*.pyc
+__MACOSX/
+backend/.venv/

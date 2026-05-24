@@ -1,20 +1,122 @@
 import os
 import re
+import json
 import requests
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
 
 
-def make_headers(bvid: str) -> dict:
+COOKIE_FILE = os.path.join(os.path.dirname(__file__), ".bili_cookie")
+PROFILE_FILE = os.path.join(os.path.dirname(__file__), ".bili_profile.json")
+
+
+def get_cookie_value() -> str:
     """
-    更像浏览器访问视频页：对字幕/封面更友好
-    可选：从环境变量 BILI_COOKIE 读取 Cookie（只本地用，不要上传 GitHub）
+    读取当前本地 Cookie。
+    优先使用环境变量 BILI_COOKIE；如果没有，则读取 backend/.bili_cookie。
+    """
+    cookie = os.getenv("BILI_COOKIE", "").strip()
+    if cookie:
+        return cookie
+
+    if os.path.exists(COOKIE_FILE):
+        try:
+            return open(COOKIE_FILE, "r", encoding="utf-8").read().strip()
+        except Exception:
+            return ""
+
+    return ""
+
+
+def get_saved_cookie_value() -> str:
+    if os.path.exists(COOKIE_FILE):
+        try:
+            return open(COOKIE_FILE, "r", encoding="utf-8").read().strip()
+        except Exception:
+            return ""
+    return ""
+
+
+def set_profile_value(profile, persist: bool = True) -> None:
+    profile = profile or {}
+    os.environ["BILI_PROFILE_JSON"] = json.dumps(profile, ensure_ascii=False)
+    if persist:
+        with open(PROFILE_FILE, "w", encoding="utf-8") as f:
+            json.dump(profile, f, ensure_ascii=False, indent=2)
+
+
+def get_profile_value() -> dict:
+    raw = os.getenv("BILI_PROFILE_JSON", "").strip()
+    if raw:
+        try:
+            return json.loads(raw)
+        except Exception:
+            pass
+    if os.path.exists(PROFILE_FILE):
+        try:
+            return json.load(open(PROFILE_FILE, "r", encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def clear_profile_value() -> None:
+    os.environ.pop("BILI_PROFILE_JSON", None)
+    if os.path.exists(PROFILE_FILE):
+        try:
+            os.remove(PROFILE_FILE)
+        except Exception:
+            pass
+
+
+def fetch_nav_profile(cookie=None) -> dict:
+    """Fetch current Bilibili user profile from the nav API. Never returns cookie."""
+    h = make_headers()
+    if cookie:
+        h["Cookie"] = cookie
+    r = requests.get("https://api.bilibili.com/x/web-interface/nav", headers=h, timeout=15)
+    r.raise_for_status()
+    j = r.json()
+    if j.get("code") != 0 or not (j.get("data") or {}).get("isLogin"):
+        return {}
+    d = j.get("data") or {}
+    return {
+        "mid": d.get("mid"),
+        "nickname": d.get("uname") or d.get("name"),
+        "avatar_url": (d.get("face") or "").replace("http://", "https://"),
+    }
+
+
+def set_cookie_value(cookie: str, persist: bool = True) -> None:
+    cookie = (cookie or "").strip()
+    os.environ["BILI_COOKIE"] = cookie
+
+    if persist:
+        with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+            f.write(cookie)
+
+
+def clear_cookie_value(clear_saved: bool = True) -> None:
+    os.environ.pop("BILI_COOKIE", None)
+    if clear_saved and os.path.exists(COOKIE_FILE):
+        try:
+            os.remove(COOKIE_FILE)
+        except Exception:
+            pass
+    if clear_saved:
+        clear_profile_value()
+
+
+def make_headers(bvid: str = "") -> dict:
+    """
+    更像浏览器访问视频页：对字幕/封面更友好。
+    Cookie 仅保存在本机 backend/.bili_cookie，不会上传到任何服务器。
     """
     h = {
         "User-Agent": UA,
-        "Referer": f"https://www.bilibili.com/video/{bvid}",
+        "Referer": f"https://www.bilibili.com/video/{bvid}" if bvid else "https://www.bilibili.com/",
     }
-    cookie = os.getenv("BILI_COOKIE", "").strip()
+    cookie = get_cookie_value()
     if cookie:
         h["Cookie"] = cookie
     return h

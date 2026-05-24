@@ -4,16 +4,42 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>B站字幕提取器</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=1.2.2">
 </head>
 <body>
   <div class="container">
-    <h1>B站字幕提取器</h1>
+    <header class="app-header">
+      <h1 data-i18n="appTitle">B站字幕提取器</h1>
+      <div class="header-actions">
+        <select id="languageSelect" class="language-select" aria-label="Language">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+        <div class="user-area">
+          <button id="avatarBtn" class="avatar-btn" type="button" aria-label="User menu">
+            <img id="avatarImg" class="avatar-img hidden" alt="avatar" />
+            <span id="avatarFallback" class="avatar-fallback">?</span>
+          </button>
+          <div id="userMenu" class="user-menu hidden">
+            <div id="menuUserInfo" class="menu-user-info">
+              <img id="menuAvatar" class="menu-avatar hidden" alt="avatar" />
+              <div>
+                <div id="menuNickname" class="menu-nickname" data-i18n="notLoggedIn">未登录</div>
+                <div id="menuSub" class="menu-sub" data-i18n="localOnly">Cookie 仅保存在本机</div>
+              </div>
+            </div>
+            <button id="menuManualCookieBtn" type="button" class="menu-item" data-i18n="manualCookie">手动Cookie</button>
+            <button id="menuClearCookieBtn" type="button" class="menu-item" data-i18n="clearCookie">清空Cookie</button>
+            <button id="menuLogoutBtn" type="button" class="menu-item danger hidden" data-i18n="logout">退出登录</button>
+          </div>
+        </div>
+      </div>
+    </header>
 
-    <div class="row">
-      <input id="urlInput" placeholder="粘贴B站链接（BV号）" />
-      <button id="btn">提取</button>
-      <button id="cookieBtn" type="button">设置Cookie</button>
+    <div class="input-row">
+      <input id="urlInput" data-i18n-placeholder="urlPlaceholder" placeholder="粘贴B站链接（BV号）" />
+      <button id="btn" data-i18n="extract">提取</button>
+      <button id="loginBtn" type="button" data-i18n="qrLogin">扫码登录</button>
     </div>
 
     <div class="row">
@@ -22,21 +48,50 @@
 
     <div id="status" class="status"></div>
 
+    <div id="loginPanel" class="login-panel hidden">
+      <div class="login-box">
+        <div class="login-qr-column">
+          <div class="login-title" data-i18n="scanTitle">使用 Bilibili 手机 App 扫码登录</div>
+          <div class="qr-frame">
+            <img id="qrImg" class="hidden" alt="Bilibili login QR code" />
+            <div id="qrPlaceholder" class="qr-placeholder" data-i18n="qrPlaceholder">点击“扫码登录”生成二维码</div>
+          </div>
+          <label class="remember-row">
+            <input id="rememberMe" type="checkbox" checked />
+            <span data-i18n="rememberMe">记住我，下次可快速登录</span>
+          </label>
+          <div id="loginStatus" class="status" data-i18n="qrIdle">请点击“扫码登录”生成二维码</div>
+          <div class="hint" data-i18n="cookieHint">Cookie 仅保存在本机，不会上传到任何服务器。</div>
+        </div>
+
+        <div id="quickLoginBox" class="quick-login-box hidden">
+          <div class="quick-title" data-i18n="quickLoginTitle">已保存的登录</div>
+          <button id="quickLoginBtn" class="quick-user-card" type="button">
+            <img id="quickAvatar" class="quick-avatar" alt="saved avatar" />
+            <div class="quick-info">
+              <div id="quickName" class="quick-name"></div>
+              <div class="quick-sub" data-i18n="quickLoginHint">点击快速登录，无需扫码</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
-      <img id="cover" alt="cover" referrerpolicy="no-referrer" />
+      <img id="cover" class="hidden" alt="cover" />
       <div class="meta">
         <div id="title" class="title"></div>
       </div>
     </div>
 
-    <textarea id="subtitle" rows="12" placeholder="字幕会显示在这里，可复制"></textarea>
+    <textarea id="subtitle" rows="12" data-i18n-placeholder="subtitlePlaceholder" placeholder="字幕会显示在这里，可复制"></textarea>
 
-    <div class="row">
-      <button id="copyBtn">一键复制</button>
-      <a id="downloadBtn" class="link" download="subtitle.txt">下载TXT</a>
+    <div class="row action-row">
+      <button id="copyBtn" data-i18n="copy">一键复制</button>
+      <a id="downloadBtn" class="link" download="subtitle.srt" data-i18n="downloadSrt">下载SRT</a>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=1.2.2"></script>
 </body>
 </html>
