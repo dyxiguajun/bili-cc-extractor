@@ -1,0 +1,274 @@
+#!/bin/bash
+
+APP_NAME="Bili CC Extractor"
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-8000}"
+URL="http://${HOST}:${PORT}/"
+
+APP_MACOS_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_CONTENTS_DIR="$(cd "${APP_MACOS_DIR}/.." && pwd)"
+APP_RESOURCES_DIR="${APP_CONTENTS_DIR}/Resources"
+APP_BUNDLE_DIR="$(cd "${APP_CONTENTS_DIR}/.." && pwd)"
+PROJECT_DIR="$(cd "${APP_BUNDLE_DIR}/.." && pwd)"
+
+# Backend is embedded inside the .app bundle. This avoids macOS Desktop/Documents privacy blocks
+# when an unsigned app tries to make Python/rsync read files from Desktop or Downloads.
+PROJECT_BACKEND_DIR="${APP_RESOURCES_DIR}/backend"
+
+RUN_ROOT="${HOME}/Library/Application Support/Bili CC Extractor"
+RUN_BACKEND_DIR="${RUN_ROOT}/backend"
+LOG_DIR="${RUN_ROOT}/logs"
+LOG_FILE="${LOG_DIR}/macos-launch.log"
+PID_FILE="${RUN_ROOT}/macos-service.pid"
+
+mkdir -p "$LOG_DIR" "$RUN_ROOT"
+echo "==== $(date) ====" >> "$LOG_FILE"
+echo "Project: $PROJECT_DIR" >> "$LOG_FILE"
+echo "App bundle: $APP_BUNDLE_DIR" >> "$LOG_FILE"
+echo "Resources backend: $PROJECT_BACKEND_DIR" >> "$LOG_FILE"
+echo "Runtime: $RUN_ROOT" >> "$LOG_FILE"
+
+dialog() {
+  /usr/bin/osascript <<EOF2 >/dev/null 2>&1
+display dialog "$1" buttons {"好的"} default button "好的" with title "${APP_NAME}"
+EOF2
+}
+
+dialog_with_result() {
+  /usr/bin/osascript <<EOF2
+button returned of (display dialog "$1" buttons {"$2", "$3"} default button "$3" with title "${APP_NAME}")
+EOF2
+}
+
+notify() {
+  /usr/bin/osascript <<EOF2 >/dev/null 2>&1
+display notification "$1" with title "${APP_NAME}"
+EOF2
+}
+
+choose_running_action() {
+  /usr/bin/osascript <<EOF2
+button returned of (display dialog "Bili CC Extractor 似乎已经在运行。\n\n你想打开浏览器，还是停止后台程序？" buttons {"取消", "停止程序", "打开浏览器"} default button "打开浏览器" cancel button "取消" with title "${APP_NAME}")
+EOF2
+}
+
+choose_python_download() {
+  /usr/bin/osascript <<EOF2
+button returned of (display dialog "未检测到可用的 Python 3。\n\n请先安装 Python 3.10 或更高版本后再运行本工具。" buttons {"退出", "打开下载页面"} default button "打开下载页面" with title "${APP_NAME}")
+EOF2
+}
+
+open_privacy_settings() {
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy" >/dev/null 2>&1 || open "x-apple.systempreferences:com.apple.Settings.PrivacySecurity.extension" >/dev/null 2>&1 || true
+}
+
+# Immediate visible feedback. Keep this dialog on screen until the browser opens.
+# It has only one action: cancel the startup process.
+START_DIALOG_PID=""
+START_DIALOG_ACTIVE=1
+(
+/usr/bin/osascript <<EOF2 >/dev/null 2>&1
+display dialog "正在启动 Bili CC Extractor…\n\n首次启动可能需要 1-3 分钟安装依赖。\n准备完成后会自动打开浏览器。" buttons {"取消进程"} default button "取消进程" with title "${APP_NAME}"
+EOF2
+) &
+START_DIALOG_PID=$!
+
+dismiss_start_dialog() {
+  START_DIALOG_ACTIVE=0
+  if [ -n "$START_DIALOG_PID" ]; then
+    kill "$START_DIALOG_PID" >/dev/null 2>&1 || true
+  fi
+}
+
+cancel_if_requested() {
+  if [ "${START_DIALOG_ACTIVE:-0}" = "1" ] && [ -n "$START_DIALOG_PID" ] && ! kill -0 "$START_DIALOG_PID" >/dev/null 2>&1; then
+    echo "User cancelled startup." >> "$LOG_FILE"
+    if [ -n "${SERVICE_PID:-}" ]; then
+      kill "$SERVICE_PID" >/dev/null 2>&1 || true
+    fi
+    lsof -tiTCP:"$PORT" -sTCP:LISTEN | xargs kill >/dev/null 2>&1 || true
+    rm -f "$PID_FILE"
+    exit 0
+  fi
+}
+
+notify "正在准备启动环境，请稍候…"
+
+cancel_if_requested
+if [ ! -d "$PROJECT_BACKEND_DIR" ]; then
+  dismiss_start_dialog
+  dialog "未找到内置 backend 文件夹。\n\n请重新下载完整的 macOS 版本压缩包。\n\n日志文件：\n$LOG_FILE"
+  exit 1
+fi
+
+# If already running, provide a friendly action dialog.
+cancel_if_requested
+if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  dismiss_start_dialog
+  ACTION="$(choose_running_action 2>/dev/null || true)"
+  case "$ACTION" in
+    "打开浏览器")
+      open "$URL"
+      exit 0
+      ;;
+    "停止程序")
+      lsof -tiTCP:"$PORT" -sTCP:LISTEN | xargs kill >/dev/null 2>&1 || true
+      rm -f "$PID_FILE"
+      dialog "后台程序已停止。"
+      exit 0
+      ;;
+    *)
+      exit 0
+      ;;
+  esac
+fi
+
+cancel_if_requested
+notify "正在复制运行文件到本机应用数据目录…"
+mkdir -p "$RUN_BACKEND_DIR"
+
+# Copy embedded backend to Application Support. Avoid reading sibling project folders on Desktop.
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete \
+    --exclude='.venv' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='.bili_cookie' \
+    --exclude='.bili_profile.json' \
+    --exclude='.bili_user.json' \
+    "$PROJECT_BACKEND_DIR/" "$RUN_BACKEND_DIR/" >> "$LOG_FILE" 2>&1 || {
+      echo "Backend copy failed." >> "$LOG_FILE"
+      dismiss_start_dialog
+      CHOICE="$(dialog_with_result "复制运行文件失败。\n\n这通常是 macOS 隐私权限拦截导致的。\n请在 系统设置 → 隐私与安全性 中允许 Bili CC Extractor 访问文件，或把项目移动到 应用程序/用户目录 后重试。\n\n日志文件：\n$LOG_FILE" "打开隐私设置" "好的" 2>/dev/null || true)"
+      if [ "$CHOICE" = "打开隐私设置" ]; then open_privacy_settings; fi
+      exit 1
+    }
+cancel_if_requested
+else
+  ditto "$PROJECT_BACKEND_DIR" "$RUN_BACKEND_DIR" >> "$LOG_FILE" 2>&1 || {
+      echo "Backend copy failed with ditto." >> "$LOG_FILE"
+      dismiss_start_dialog
+      CHOICE="$(dialog_with_result "复制运行文件失败。\n\n这通常是 macOS 隐私权限拦截导致的。\n请在 系统设置 → 隐私与安全性 中允许 Bili CC Extractor 访问文件后重试。\n\n日志文件：\n$LOG_FILE" "打开隐私设置" "好的" 2>/dev/null || true)"
+      if [ "$CHOICE" = "打开隐私设置" ]; then open_privacy_settings; fi
+      exit 1
+  }
+fi
+
+cancel_if_requested
+
+# Prefer user-installed Python versions. Avoid relying on Apple CommandLineTools Python 3.9 when possible.
+PYTHON_BIN=""
+for candidate in \
+  "/opt/homebrew/bin/python3.12" \
+  "/opt/homebrew/bin/python3.11" \
+  "/opt/homebrew/bin/python3.10" \
+  "/usr/local/bin/python3.12" \
+  "/usr/local/bin/python3.11" \
+  "/usr/local/bin/python3.10" \
+  "python3.12" \
+  "python3.11" \
+  "python3.10" \
+  "python3"
+do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v "$candidate")"
+    break
+  fi
+done
+
+cancel_if_requested
+if [ -z "$PYTHON_BIN" ]; then
+  dismiss_start_dialog
+  CHOICE="$(choose_python_download)"
+  if [ "$CHOICE" = "打开下载页面" ]; then
+    open "https://www.python.org/downloads/macos/"
+  fi
+  exit 1
+fi
+
+echo "Using Python: $("$PYTHON_BIN" --version 2>&1) at $PYTHON_BIN" >> "$LOG_FILE"
+
+BACKEND_DIR="$RUN_BACKEND_DIR"
+VENV_DIR="$BACKEND_DIR/.venv"
+
+if [ -d "$VENV_DIR" ] && [ ! -f "$VENV_DIR/bin/activate" ]; then
+  echo "Broken venv detected, removing: $VENV_DIR" >> "$LOG_FILE"
+  rm -rf "$VENV_DIR"
+fi
+
+cancel_if_requested
+notify "正在创建/检查 Python 虚拟环境…"
+
+if [ ! -f "$VENV_DIR/bin/python" ]; then
+  echo "[1/4] Creating venv..." >> "$LOG_FILE"
+  if ! "$PYTHON_BIN" -m venv "$VENV_DIR" >> "$LOG_FILE" 2>&1; then
+    echo "venv creation failed." >> "$LOG_FILE"
+    rm -rf "$VENV_DIR"
+    dismiss_start_dialog
+    CHOICE="$(choose_python_download)"
+    if [ "$CHOICE" = "打开下载页面" ]; then
+      open "https://www.python.org/downloads/macos/"
+    fi
+    dialog "创建 Python 虚拟环境失败。\n\n建议安装 Python 3.10 或更高版本后重试。\n\n日志文件：\n$LOG_FILE"
+    exit 1
+  fi
+fi
+
+cancel_if_requested
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  dismiss_start_dialog
+  dialog "虚拟环境创建不完整。\n\n请删除以下目录后重试：\n$VENV_DIR\n\n日志文件：\n$LOG_FILE"
+  exit 1
+fi
+
+cancel_if_requested
+notify "正在安装依赖，首次启动可能需要几分钟…"
+
+(
+  set -e
+  cd "$BACKEND_DIR"
+  source "$VENV_DIR/bin/activate"
+
+  echo "[2/4] Upgrade pip..." 
+  python -m pip install --upgrade pip
+
+  echo "[3/4] Install requirements..."
+  python -m pip install -r requirements.txt
+
+  echo "[4/4] Run server..."
+  exec python -m uvicorn app:app --host "$HOST" --port "$PORT"
+) >> "$LOG_FILE" 2>&1 &
+
+SERVICE_PID=$!
+echo "$SERVICE_PID" > "$PID_FILE"
+echo "Service PID: $SERVICE_PID" >> "$LOG_FILE"
+
+notify "正在启动本地服务…"
+
+for i in $(seq 1 180); do
+  cancel_if_requested
+  if lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Server ready." >> "$LOG_FILE"
+    notify "启动完成，正在打开浏览器…"
+    dismiss_start_dialog
+    open "$URL"
+    exit 0
+  fi
+
+  if ! kill -0 "$SERVICE_PID" >/dev/null 2>&1; then
+    echo "Service exited before port became ready." >> "$LOG_FILE"
+    tail -n 100 "$LOG_FILE" > "$LOG_DIR/macos-last-error.log" 2>/dev/null || true
+    dismiss_start_dialog
+    dialog "启动失败，后台服务提前退出。\n\n请查看日志文件：\n$LOG_FILE"
+    exit 1
+  fi
+
+  sleep 1
+done
+
+echo "Startup timeout." >> "$LOG_FILE"
+kill "$SERVICE_PID" >/dev/null 2>&1 || true
+lsof -tiTCP:"$PORT" -sTCP:LISTEN | xargs kill >/dev/null 2>&1 || true
+dismiss_start_dialog
+dialog "启动超时。\n\n请查看日志文件：\n$LOG_FILE"
+exit 1

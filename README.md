@@ -31,21 +31,25 @@ Start Windows.bat
 
 ### macOS
 
-推荐使用 Terminal 运行，避免 macOS 权限问题：
+推荐使用图形启动器，不需要输入 `chmod` 或终端命令：
+
+```text
+右键点击 Bili CC Extractor.app → 打开
+```
+
+如果 macOS 提示“无法验证开发者”，请到：
+
+```text
+系统设置 → 隐私与安全性 → 仍要打开
+```
+
+首次启动可能需要 1-3 分钟安装依赖。启动器会自动打开浏览器。
+
+备用方式：
 
 ```bash
-cd path/to/bili-cc-extractor-tools
 bash scripts/start-macos.sh
 ```
-
-也可以给启动器授权后双击：
-
-```bash
-chmod +x "Start macOS.command"
-./"Start macOS.command"
-```
-
-如果双击时 macOS 提示无法打开，可以右键点击 `Start macOS.command`，选择“打开”。
 
 ### Linux
 
@@ -73,11 +77,38 @@ bili-cc-extractor-tools/
 ├── scripts/
 │   ├── start-macos.sh
 │   ├── start-windows.bat
-│   └── start-linux.sh
+│   ├── start-linux.sh
+│   └── package-macos.sh
+├── Bili CC Extractor.app
 ├── Start macOS.command
 ├── Start Windows.bat
 ├── README.md
 └── .gitignore
+```
+
+
+## macOS App Launcher
+
+`Bili CC Extractor.app` 是 macOS 图形启动器，适合普通用户使用。
+
+它会自动完成：
+
+- 检查 Python 3
+- 检查项目目录
+- 后台运行 `scripts/start-macos.sh`
+- 写入启动日志到 `logs/macos-launch.log`
+- 自动打开 `http://127.0.0.1:8000/`
+
+如果要制作 macOS Release 压缩包，可以在 macOS 上运行：
+
+```bash
+bash scripts/package-macos.sh
+```
+
+生成的压缩包位于：
+
+```text
+dist/
 ```
 
 ## Manual Start

@@ -11,3 +11,5 @@ backend/.bili_user.json
 backend/.bili_profile.json
 *.cookie
 *.cookies
+logs/
+dist/
