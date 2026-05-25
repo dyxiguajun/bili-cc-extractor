@@ -468,9 +468,13 @@ def proxy_image(url: str):
 
 @app.post("/api/shutdown")
 def shutdown_app():
-    """Stop the local backend process after returning a response."""
+    """Stop the local backend process after returning a response.
+
+    Startup scripts intentionally run uvicorn without --reload, so this exits
+    the exact server process and lets the Windows CMD window close normally.
+    """
     def _stop():
-        time.sleep(0.5)
+        time.sleep(0.8)
         os._exit(0)
     threading.Thread(target=_stop, daemon=True).start()
     return {"ok": True, "message": "Bili CC Extractor is shutting down."}

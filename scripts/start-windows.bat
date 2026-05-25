@@ -55,6 +55,8 @@ python -m pip install -r requirements.txt
 echo.
 echo [6/6] Open browser and run server...
 start "" "%URL%"
-python -m uvicorn app:app --reload --host %HOST% --port %PORT%
+REM Do not use --reload here. The web UI shutdown button must stop this exact process,
+REM otherwise uvicorn's reloader may keep the CMD window alive and restart the server.
+python -m uvicorn app:app --host %HOST% --port %PORT%
 
 endlocal

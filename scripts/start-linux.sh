@@ -35,4 +35,4 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
 xdg-open "$URL" >/dev/null 2>&1 || true
-python -m uvicorn app:app --reload --host "$HOST" --port "$PORT"
+python -m uvicorn app:app --host "$HOST" --port "$PORT"

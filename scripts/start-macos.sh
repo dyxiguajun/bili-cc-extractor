@@ -65,7 +65,7 @@ if [ "${OPEN_BROWSER:-1}" != "0" ]; then
 fi
 
 if [ "${UVICORN_RELOAD:-0}" = "1" ]; then
-  python -m uvicorn app:app --reload --host "$HOST" --port "$PORT"
+  python -m uvicorn app:app --host "$HOST" --port "$PORT"
 else
   python -m uvicorn app:app --host "$HOST" --port "$PORT"
 fi
